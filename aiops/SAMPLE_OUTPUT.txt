@@ -1,0 +1,30 @@
+$ bash aiops/demo.sh
+[ 0 s] start version 1, start watching
+[40 s] deploy version 2 (600 ms per answer, no restart)
+[70 s] rollback to version 1 (restart)
+[82 s] done watching
+
+Checks read:      152
+Normal band:      about 5 ms, alert above 10 ms
+                  (learned from 60 checks)
+Outside the band: 50 checks
+Grouped into:     1 incident (not 50 alerts)
+Incident 1:       50 checks over 31 s, worst 618 ms
+Likely cause:     deploy version 2, under 0.1 s before it started
+This is a likely cause, not proof.
+You decide.
+
+Data kept in aiops/last-run/. Try a much wider margin:
+  python3 aiops/detect.py --checks aiops/last-run/checks.csv \
+    --changes aiops/last-run/changes.log --margin 1000
+
+$ python3 aiops/detect.py --checks aiops/last-run/checks.csv --changes aiops/last-run/changes.log --margin 1000
+Checks read:      152
+Normal band:      about 5 ms, alert above 1005 ms
+                  (learned from 60 checks)
+Outside the band: 1 check
+Grouped into:     1 incident
+Incident 1:       1 check, no answer
+Likely cause:     rollback to version 1, 0.7 s before it started
+This is a likely cause, not proof.
+You decide.
