@@ -1,0 +1,15 @@
+# The counter: a Service is one stable address in front of whichever pods are open.
+apiVersion: v1
+kind: Service
+metadata:
+  name: status-board
+  labels:
+    app: status-board
+spec:
+  # Send traffic to every ready pod labelled app=status-board.
+  selector:
+    app: status-board
+  ports:
+    # The counter listens on port 80 and hands each envelope to port 8080 in a pod.
+    - port: 80
+      targetPort: 8080

@@ -1,0 +1,550 @@
+##### ./00-create-yard.sh
+
+== Creating the kind cluster 'yard' (1 control-plane + 2 workers). Takes a minute or two.
+$ kind create cluster --name yard --config /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter/k8s/kind-config.yaml
+Creating cluster "yard" ...
+ • Ensuring node image (kindest/node:v1.37.0) 🖼️  ...
+ ✓ Ensuring node image (kindest/node:v1.37.0) 🖼️
+ • Preparing nodes 📦 📦 📦   ...
+ ✓ Preparing nodes 📦 📦 📦 
+ • Writing configuration 📜  ...
+ ✓ Writing configuration 📜
+ • Starting control-plane 🕹️  ...
+ ✓ Starting control-plane 🕹️
+ • Installing CNI 🔌  ...
+ ✓ Installing CNI 🔌
+ • Installing StorageClass 💾  ...
+ ✓ Installing StorageClass 💾
+ • Joining worker nodes 🚜  ...
+ ✓ Joining worker nodes 🚜
+Set kubectl context to "kind-yard"
+You can now use your cluster with:
+
+kubectl cluster-info --context kind-yard
+
+Have a question, bug, or feature request? Let us know! https://kind.sigs.k8s.io/#community 🙂
+
+== Packing the app into an image from the starter Dockerfile: status-board:v1
+$ docker build -q -t status-board:v1 /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter
+sha256:9098ded570dd735cba22e99ec73189622906d7050de00633d79d1cca8e907288
+
+== Loading the image into every node (kind cannot see your local Docker images otherwise)
+Image: "status-board:v1" with ID "sha256:9098ded570dd735cba22e99ec73189622906d7050de00633d79d1cca8e907288" not yet present on node "yard-worker2", loading...
+Image: "status-board:v1" with ID "sha256:9098ded570dd735cba22e99ec73189622906d7050de00633d79d1cca8e907288" not yet present on node "yard-control-plane", loading...
+Image: "status-board:v1" with ID "sha256:9098ded570dd735cba22e99ec73189622906d7050de00633d79d1cca8e907288" not yet present on node "yard-worker", loading...
+
+== Waiting for all three nodes to be Ready
+$ kubectl wait --for=condition=Ready node --all --timeout=120s
+node/yard-control-plane condition met
+node/yard-worker condition met
+node/yard-worker2 condition met
+$ kubectl get nodes
+NAME                 STATUS   ROLES           AGE   VERSION
+yard-control-plane   Ready    control-plane   26s   v1.37.0
+yard-worker          Ready    <none>          12s   v1.37.0
+yard-worker2         Ready    <none>          12s   v1.37.0
+
+##### ./01-write-the-clipboard.sh
+
+== Writing the clipboard: deployment.yaml says replicas: 3
+10:  replicas: 3
+$ kubectl apply -f /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter/k8s/deployment.yaml
+deployment.apps/status-board created
+
+== Waiting until 3/3 pods are ready
+$ kubectl rollout status deployment/status-board --timeout=180s
+Waiting for deployment "status-board" rollout to finish: 0 of 3 updated replicas are available...
+Waiting for deployment "status-board" rollout to finish: 1 of 3 updated replicas are available...
+Waiting for deployment "status-board" rollout to finish: 2 of 3 updated replicas are available...
+deployment "status-board" successfully rolled out
+$ kubectl get deployment status-board
+NAME           READY   UP-TO-DATE   AVAILABLE   AGE
+status-board   3/3     3            3           3s
+
+== The crates (pods) and the hub (node) each one stands on
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-kg2vx   1/1     Running   0          3s    10.244.2.2   yard-worker    <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          3s    10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          3s    10.244.2.3   yard-worker    <none>           <none>
+
+##### ./02-delete-a-crate.sh
+
+== Before: three pods
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-kg2vx   1/1     Running   0          3s    10.244.2.2   yard-worker    <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          3s    10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          3s    10.244.2.3   yard-worker    <none>           <none>
+
+== Deleting one pod: status-board-6f59cc566f-kg2vx (and touching nothing else)
+$ kubectl delete pod status-board-6f59cc566f-kg2vx --wait=false
+pod "status-board-6f59cc566f-kg2vx" deleted from default namespace
+
+== Watching: a snapshot every 2 seconds for 16 seconds
+
+-- t+0s
+NAME                            READY   STATUS              RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   0/1     ContainerCreating   0          0s    <none>       yard-worker2   <none>           <none>
+status-board-6f59cc566f-kg2vx   1/1     Terminating         0          4s    10.244.2.2   yard-worker    <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running             0          4s    10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running             0          4s    10.244.2.3   yard-worker    <none>           <none>
+
+-- t+2s
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   0/1     Running       0          2s    10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-kg2vx   1/1     Terminating   0          6s    10.244.2.2   yard-worker    <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running       0          6s    10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running       0          6s    10.244.2.3   yard-worker    <none>           <none>
+
+-- t+4s
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   1/1     Running       0          4s    10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-kg2vx   1/1     Terminating   0          8s    10.244.2.2   yard-worker    <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running       0          8s    10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running       0          8s    10.244.2.3   yard-worker    <none>           <none>
+
+-- t+6s
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   1/1     Running   0          6s    10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          10s   10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          10s   10.244.2.3   yard-worker    <none>           <none>
+
+-- t+8s
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   1/1     Running   0          8s    10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          12s   10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          12s   10.244.2.3   yard-worker    <none>           <none>
+
+-- t+10s
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   1/1     Running   0          10s   10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          14s   10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          14s   10.244.2.3   yard-worker    <none>           <none>
+
+-- t+12s
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   1/1     Running   0          12s   10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          16s   10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          16s   10.244.2.3   yard-worker    <none>           <none>
+
+-- t+14s
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-gzdkk   1/1     Running   0          14s   10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          18s   10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          18s   10.244.2.3   yard-worker    <none>           <none>
+
+== After: three pods again, one of them new
+$ kubectl get deployment status-board
+NAME           READY   UP-TO-DATE   AVAILABLE   AGE
+status-board   3/3     3            3           20s
+The clipboard still said three, so the tower opened another.
+
+##### ./03-ask-for-five.sh
+
+== Editing the clipboard: replicas 3 -> 5 (applied from a changed copy; the file on disk stays at 3)
+$ kubectl apply -f - (replicas: 5)
+deployment.apps/status-board configured
+$ kubectl rollout status deployment/status-board --timeout=120s
+Waiting for deployment "status-board" rollout to finish: 3 of 5 updated replicas are available...
+Waiting for deployment "status-board" rollout to finish: 4 of 5 updated replicas are available...
+deployment "status-board" successfully rolled out
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS    RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-glc2c   1/1     Running   0          4s    10.244.2.5   yard-worker    <none>           <none>
+status-board-6f59cc566f-gzdkk   1/1     Running   0          20s   10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running   0          24s   10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-wm7hm   1/1     Running   0          4s    10.244.2.4   yard-worker    <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running   0          24s   10.244.2.3   yard-worker    <none>           <none>
+
+== Putting the clipboard back: apply the real file, which says three
+$ kubectl apply -f /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter/k8s/deployment.yaml
+deployment.apps/status-board configured
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-glc2c   1/1     Terminating   0          10s   10.244.2.5   yard-worker    <none>           <none>
+status-board-6f59cc566f-gzdkk   1/1     Running       0          26s   10.244.1.3   yard-worker2   <none>           <none>
+status-board-6f59cc566f-s7n7j   1/1     Running       0          30s   10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-wm7hm   1/1     Terminating   0          10s   10.244.2.4   yard-worker    <none>           <none>
+status-board-6f59cc566f-xpqzc   1/1     Running       0          30s   10.244.2.3   yard-worker    <none>           <none>
+
+##### ./04-one-at-a-time.sh
+
+== Packing version two (same app, heading reads 'Status Board v2')
+$ docker build -q -f /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter/k8s/Dockerfile.v2 --build-arg LABEL=v2 -t status-board:v2 /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter
+sha256:ffe354ff2b3c6e74b0b073fe21e1dfde3eeb2d58cc177c7d0fb07e904fdee10e
+Image: "status-board:v2" with ID "sha256:ffe354ff2b3c6e74b0b073fe21e1dfde3eeb2d58cc177c7d0fb07e904fdee10e" not yet present on node "yard-worker2", loading...
+Image: "status-board:v2" with ID "sha256:ffe354ff2b3c6e74b0b073fe21e1dfde3eeb2d58cc177c7d0fb07e904fdee10e" not yet present on node "yard-control-plane", loading...
+Image: "status-board:v2" with ID "sha256:ffe354ff2b3c6e74b0b073fe21e1dfde3eeb2d58cc177c7d0fb07e904fdee10e" not yet present on node "yard-worker", loading...
+
+== Telling the Deployment to use v2, then watching pods swap one at a time
+$ kubectl set image deployment/status-board status-board=status-board:v2
+deployment.apps/status-board image updated
+-- t+0s
+NAME                            READY   STATUS              RESTARTS   AGE
+status-board-6f59cc566f-gzdkk   1/1     Running             0          29s
+status-board-6f59cc566f-s7n7j   1/1     Running             0          33s
+status-board-6f59cc566f-xpqzc   1/1     Running             0          33s
+status-board-79c549958-btvqt    0/1     ContainerCreating   0          0s
+-- t+3s
+NAME                            READY   STATUS    RESTARTS   AGE
+status-board-6f59cc566f-gzdkk   1/1     Running   0          32s
+status-board-6f59cc566f-s7n7j   1/1     Running   0          36s
+status-board-6f59cc566f-xpqzc   1/1     Running   0          36s
+status-board-79c549958-btvqt    0/1     Running   0          3s
+-- t+6s
+NAME                            READY   STATUS        RESTARTS   AGE
+status-board-6f59cc566f-gzdkk   1/1     Terminating   0          35s
+status-board-6f59cc566f-s7n7j   1/1     Running       0          39s
+status-board-6f59cc566f-xpqzc   1/1     Running       0          39s
+status-board-79c549958-4cmnv    0/1     Running       0          3s
+status-board-79c549958-btvqt    1/1     Running       0          6s
+-- t+9s
+NAME                            READY   STATUS        RESTARTS   AGE
+status-board-6f59cc566f-gzdkk   0/1     Error         0          38s
+status-board-6f59cc566f-s7n7j   1/1     Terminating   0          42s
+status-board-6f59cc566f-xpqzc   1/1     Running       0          42s
+status-board-79c549958-425c2    0/1     Running       0          2s
+status-board-79c549958-4cmnv    1/1     Running       0          6s
+status-board-79c549958-btvqt    1/1     Running       0          9s
+-- t+12s
+NAME                            READY   STATUS        RESTARTS   AGE
+status-board-6f59cc566f-s7n7j   1/1     Terminating   0          45s
+status-board-6f59cc566f-xpqzc   1/1     Terminating   0          45s
+status-board-79c549958-425c2    1/1     Running       0          5s
+status-board-79c549958-4cmnv    1/1     Running       0          9s
+status-board-79c549958-btvqt    1/1     Running       0          12s
+-- t+15s
+NAME                            READY   STATUS        RESTARTS   AGE
+status-board-6f59cc566f-xpqzc   1/1     Terminating   0          48s
+status-board-79c549958-425c2    1/1     Running       0          8s
+status-board-79c549958-4cmnv    1/1     Running       0          12s
+status-board-79c549958-btvqt    1/1     Running       0          15s
+-- t+18s
+NAME                           READY   STATUS    RESTARTS   AGE
+status-board-79c549958-425c2   1/1     Running   0          11s
+status-board-79c549958-4cmnv   1/1     Running   0          15s
+status-board-79c549958-btvqt   1/1     Running   0          18s
+-- t+21s
+NAME                           READY   STATUS    RESTARTS   AGE
+status-board-79c549958-425c2   1/1     Running   0          14s
+status-board-79c549958-4cmnv   1/1     Running   0          18s
+status-board-79c549958-btvqt   1/1     Running   0          21s
+$ kubectl rollout status deployment/status-board --timeout=180s
+deployment "status-board" successfully rolled out
+
+== Rollout history and the image now running
+$ kubectl rollout history deployment/status-board
+deployment.apps/status-board 
+REVISION  CHANGE-CAUSE
+1         <none>
+2         <none>
+
+image: status-board:v2
+Heading inside a running pod:
+29:    return f"<h1>Status Board v2</h1><table>{rows}</table>"
+
+== Changed our mind: rollout undo (swaps back, again one at a time)
+$ kubectl rollout undo deployment/status-board
+Warning: resource deployments/status-board was previously managed with 'kubectl apply'. Rolling back will not update the kubectl.kubernetes.io/last-applied-configuration annotation, which may cause unexpected behavior on future 'kubectl apply' operations. Consider using 'kubectl apply' with your previous configuration file instead.
+deployment.apps/status-board rolled back
+$ kubectl rollout status deployment/status-board --timeout=180s
+Waiting for deployment "status-board" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "status-board" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "status-board" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "status-board" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "status-board" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "status-board" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "status-board" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "status-board" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "status-board" rollout to finish: 1 old replicas are pending termination...
+deployment "status-board" successfully rolled out
+image: status-board:v1
+Heading inside a running pod:
+29:    return f"<h1>Status Board</h1><table>{rows}</table>"
+
+##### ./05-the-counter.sh
+
+== Creating the counter (Service)
+$ kubectl apply -f /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter/k8s/service.yaml
+service/status-board created
+$ kubectl get service status-board
+NAME           TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+status-board   ClusterIP   10.96.66.6   <none>        80/TCP    0s
+$ kubectl get endpointslices -l kubernetes.io/service-name=status-board
+NAME                 ADDRESSTYPE   PORTS   ENDPOINTS                                      AGE
+status-board-vx8mj   IPv4          8080    10.244.2.7,10.244.1.6,10.244.1.4 + 2 more...   0s
+
+== Opening a tunnel: localhost:8092 -> Service status-board:80
+
+== Knocking on the counter four times
+$ curl localhost:8092/health  ->  OK  (HTTP 200)
+$ curl localhost:8092/health  ->  OK  (HTTP 200)
+$ curl localhost:8092/health  ->  OK  (HTTP 200)
+$ curl localhost:8092/health  ->  OK  (HTTP 200)
+Same address every time, whichever pod answers.
+
+##### ./06-dark-hub.sh
+
+== Before: where each pod stands
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          13s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          9s    10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          5s    10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          31s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          35s   10.244.1.4   yard-worker2   <none>           <none>
+
+== Cutting the power to yard-worker2 (docker stop yard-worker2)
+
+== Watching every 5 s until three pods are Running and none is on yard-worker2 (limit 5 min)
+
+-- t+3s
+yard-control-plane   Ready   control-plane   101s   v1.37.0
+yard-worker          Ready   <none>          87s    v1.37.0
+yard-worker2         Ready   <none>          87s    v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          16s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          12s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          8s    10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          34s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          38s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+9s
+yard-control-plane   Ready   control-plane   107s   v1.37.0
+yard-worker          Ready   <none>          93s    v1.37.0
+yard-worker2         Ready   <none>          93s    v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          22s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          18s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          14s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          40s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          44s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+14s
+yard-control-plane   Ready   control-plane   112s   v1.37.0
+yard-worker          Ready   <none>          98s    v1.37.0
+yard-worker2         Ready   <none>          98s    v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          27s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          23s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          19s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          45s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          49s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+19s
+yard-control-plane   Ready   control-plane   117s   v1.37.0
+yard-worker          Ready   <none>          103s   v1.37.0
+yard-worker2         Ready   <none>          103s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          32s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          28s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          24s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          50s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          54s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+24s
+yard-control-plane   Ready   control-plane   2m2s   v1.37.0
+yard-worker          Ready   <none>          108s   v1.37.0
+yard-worker2         Ready   <none>          108s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          37s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          33s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          29s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          55s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          59s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+29s
+yard-control-plane   Ready   control-plane   2m7s   v1.37.0
+yard-worker          Ready   <none>          113s   v1.37.0
+yard-worker2         Ready   <none>          113s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          42s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          38s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          34s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          60s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          64s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+34s
+yard-control-plane   Ready   control-plane   2m12s   v1.37.0
+yard-worker          Ready   <none>          118s    v1.37.0
+yard-worker2         Ready   <none>          118s    v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          47s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          43s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          39s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          65s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          69s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+39s
+yard-control-plane   Ready   control-plane   2m18s   v1.37.0
+yard-worker          Ready   <none>          2m4s    v1.37.0
+yard-worker2         Ready   <none>          2m4s    v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          53s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          49s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          45s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          71s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          75s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+45s
+yard-control-plane   Ready   control-plane   2m23s   v1.37.0
+yard-worker          Ready   <none>          2m9s    v1.37.0
+yard-worker2         Ready   <none>          2m9s    v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          58s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          54s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          50s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          76s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          80s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+50s
+yard-control-plane   Ready   control-plane   2m28s   v1.37.0
+yard-worker          Ready   <none>          2m14s   v1.37.0
+yard-worker2         Ready   <none>          2m14s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          63s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          59s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          55s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          81s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          85s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+55s
+yard-control-plane   Ready      control-plane   2m33s   v1.37.0
+yard-worker          Ready      <none>          2m19s   v1.37.0
+yard-worker2         NotReady   <none>          2m19s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          68s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          64s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          60s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          86s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          90s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+60s
+yard-control-plane   Ready      control-plane   2m38s   v1.37.0
+yard-worker          Ready      <none>          2m24s   v1.37.0
+yard-worker2         NotReady   <none>          2m24s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE   IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          73s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          69s   10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          65s   10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          91s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          95s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+65s
+yard-control-plane   Ready      control-plane   2m43s   v1.37.0
+yard-worker          Ready      <none>          2m29s   v1.37.0
+yard-worker2         NotReady   <none>          2m29s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          78s    10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          74s    10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          70s    10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          96s    10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          100s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+71s
+yard-control-plane   Ready      control-plane   2m49s   v1.37.0
+yard-worker          Ready      <none>          2m35s   v1.37.0
+yard-worker2         NotReady   <none>          2m35s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          84s    10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          80s    10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          76s    10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          102s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          106s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+76s
+yard-control-plane   Ready      control-plane   2m54s   v1.37.0
+yard-worker          Ready      <none>          2m40s   v1.37.0
+yard-worker2         NotReady   <none>          2m40s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          89s    10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          85s    10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Running       0          81s    10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          107s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          111s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+81s
+yard-control-plane   Ready      control-plane   2m59s   v1.37.0
+yard-worker          Ready      <none>          2m45s   v1.37.0
+yard-worker2         NotReady   <none>          2m45s   v1.37.0
+NAME                            READY   STATUS              RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running             0          94s    10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-d4skb   0/1     ContainerCreating   0          0s     <none>       yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running             0          90s    10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Terminating         0          86s    10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error               0          112s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating         0          116s   10.244.1.4   yard-worker2   <none>           <none>
+
+-- t+86s
+yard-control-plane   Ready      control-plane   3m4s    v1.37.0
+yard-worker          Ready      <none>          2m50s   v1.37.0
+yard-worker2         NotReady   <none>          2m50s   v1.37.0
+NAME                            READY   STATUS        RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running       0          99s    10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-d4skb   1/1     Running       0          5s     10.244.2.9   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running       0          95s    10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   1/1     Terminating   0          91s    10.244.1.6   yard-worker2   <none>           <none>
+status-board-79c549958-425c2    0/1     Error         0          117s   10.244.1.5   yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    1/1     Terminating   0          2m1s   10.244.1.4   yard-worker2   <none>           <none>
+
+Replaced in about 86s. Three ready pods, none live on yard-worker2.
+
+== Restoring the power: docker start yard-worker2
+$ kubectl get nodes
+NAME                 STATUS   ROLES           AGE     VERSION
+yard-control-plane   Ready    control-plane   3m7s    v1.37.0
+yard-worker          Ready    <none>          2m53s   v1.37.0
+yard-worker2         Ready    <none>          2m53s   v1.37.0
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS    RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-8fl9t   1/1     Running   0          102s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-d4skb   1/1     Running   0          8s     10.244.2.9   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running   0          98s    10.244.2.8   yard-worker    <none>           <none>
+status-board-6f59cc566f-qx76g   0/1     Unknown   0          94s    <none>       yard-worker2   <none>           <none>
+status-board-79c549958-4cmnv    0/1     Unknown   0          2m4s   <none>       yard-worker2   <none>           <none>
+
+##### ./07-literal.sh
+
+== Mistake 1: the file names a crate that was never packed (status-board:v99)
+$ kubectl apply -f - (image: status-board:v99)
+deployment.apps/status-board configured
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS             RESTARTS   AGE    IP           NODE           NOMINATED NODE   READINESS GATES
+status-board-588b96cdf6-qdv4j   0/1     ImagePullBackOff   0          20s    10.244.1.2   yard-worker2   <none>           <none>
+status-board-6f59cc566f-8fl9t   1/1     Running            0          2m3s   10.244.2.7   yard-worker    <none>           <none>
+status-board-6f59cc566f-d4skb   1/1     Running            0          29s    10.244.2.9   yard-worker    <none>           <none>
+status-board-6f59cc566f-ks22v   1/1     Running            0          119s   10.244.2.8   yard-worker    <none>           <none>
+The new pod cannot start, and the tower keeps trying; the old pods keep serving (maxUnavailable: 0).
+stuck: status-board-588b96cdf6-qdv4j  ImagePullBackOff
+
+== Mistake 2: the file says replicas: 0. Zero is a number; the tower obeys.
+$ kubectl apply -f - (replicas: 0)
+deployment.apps/status-board configured
+$ kubectl get pods -l app=status-board -o wide
+No resources found in default namespace.
+$ kubectl get deployment status-board
+NAME           READY   UP-TO-DATE   AVAILABLE   AGE
+status-board   0/0     0            0           3m11s
+
+== Fixing the file, not the pods: apply the real deployment.yaml (status-board:v1, replicas: 3)
+$ kubectl apply -f /Users/admin/Desktop/Videos/devops-roadmap-kit/v2/publish/status-board-starter/k8s/deployment.yaml
+deployment.apps/status-board configured
+$ kubectl rollout status deployment/status-board --timeout=180s
+Waiting for deployment "status-board" rollout to finish: 0 of 3 updated replicas are available...
+Waiting for deployment "status-board" rollout to finish: 1 of 3 updated replicas are available...
+Waiting for deployment "status-board" rollout to finish: 2 of 3 updated replicas are available...
+deployment "status-board" successfully rolled out
+$ kubectl get pods -l app=status-board -o wide
+NAME                            READY   STATUS    RESTARTS   AGE   IP            NODE           NOMINATED NODE   READINESS GATES
+status-board-6f59cc566f-6frzb   1/1     Running   0          4s    10.244.2.10   yard-worker    <none>           <none>
+status-board-6f59cc566f-7z652   1/1     Running   0          4s    10.244.2.11   yard-worker    <none>           <none>
+status-board-6f59cc566f-z9pln   1/1     Running   0          4s    10.244.1.3    yard-worker2   <none>           <none>
+
+##### ./99-clean-up.sh
+
+== Deleting the kind cluster 'yard'
+$ kind delete cluster --name yard
+Deleting cluster "yard" ...
+Deleted nodes: ["yard-worker2" "yard-control-plane" "yard-worker"]
+Optional: docker rmi status-board:v1 status-board:v2

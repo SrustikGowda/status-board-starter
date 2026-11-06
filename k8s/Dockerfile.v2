@@ -1,0 +1,6 @@
+# Version two of the packing: the starter image plus one visible change to the page heading.
+# Build with: docker build -f k8s/Dockerfile.v2 --build-arg LABEL=v2 -t status-board:v2 .
+FROM status-board:v1
+ARG LABEL=v2
+RUN sed -i "s|<h1>Status Board</h1>|<h1>Status Board ${LABEL}</h1>|" app.py \
+ && grep -q "Status Board ${LABEL}" app.py

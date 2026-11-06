@@ -1,0 +1,38 @@
+# SLI = share of probes that succeeded. Target 99%, so the error budget is 1%.
+# Alert thresholds follow Table 5-8 of
+# https://sre.google/workbook/alerting-on-slos/ (14.4x/1h+5m and 6x/6h+30m both page).
+groups:
+  - name: status-board-sli
+    rules:
+      - record: sli:probe_success:ratio_5m
+        expr: avg_over_time(probe_success[5m])
+      - record: sli:probe_success:ratio_30m
+        expr: avg_over_time(probe_success[30m])
+      - record: sli:probe_success:ratio_1h
+        expr: avg_over_time(probe_success[1h])
+      - record: sli:probe_success:ratio_6h
+        expr: avg_over_time(probe_success[6h])
+
+  - name: status-board-burn-rate
+    rules:
+      # Fast burn: 14.4x the allowed rate (1% x 14.4 = 14.4% bad), long AND short window.
+      - alert: ErrorBudgetBurnFast
+        expr: |
+          (1 - sli:probe_success:ratio_1h) > (14.4 * 0.01)
+          and
+          (1 - sli:probe_success:ratio_5m) > (14.4 * 0.01)
+        labels:
+          severity: page
+        annotations:
+          summary: "Burning the error budget 14x too fast (1h and 5m)"
+
+      # Slow burn: 6x the allowed rate (6% bad) over 6h AND 30m.
+      - alert: ErrorBudgetBurnSlow
+        expr: |
+          (1 - sli:probe_success:ratio_6h) > (6 * 0.01)
+          and
+          (1 - sli:probe_success:ratio_30m) > (6 * 0.01)
+        labels:
+          severity: page
+        annotations:
+          summary: "Burning the error budget 6x too fast (6h and 30m)"

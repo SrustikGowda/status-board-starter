@@ -1,0 +1,49 @@
+[ 0 s] start v1 (fast)
+[40 s] deploy v2 (600 ms delay, no restart)
+noted: deploy v2
+[70 s] rollback to v1 (no restart)
+noted: rollback to v1
+[91 s] done watching
+
+Good = ok and <= 300 ms
+Total checks:     168
+Good checks:      119
+SLI:              70.8%
+Target:           99%
+Budget allowed:   1.7 bad checks
+Bad checks used:  49
+Budget remaining: 0%
+Overspent:        29.2x the allowance
+Errors: 0   Slow (>300 ms): 49
+Burn rate (60s):  45.0x
+BUDGET EMPTY: pause risky changes
+PAGE: burning 14x too fast
+(one window; real alerts use two)
+Likely cause: deploy v2, 0.3 s before trouble
+(a clue, not proof: go and check)
+
+Data kept in slo/last-run/. Try a looser threshold:
+  python3 slo/slo.py --checks slo/last-run/checks.csv \
+    --changes slo/last-run/changes.log --threshold-ms 1000
+
+$ python3 slo/slo.py --checks slo/last-run/checks.csv --changes slo/last-run/changes.log --threshold-ms 1000
+Good = ok and <= 1000 ms
+Total checks:     168
+Good checks:      168
+SLI:              100.0%
+Target:           99%
+Budget allowed:   1.7 bad checks
+Bad checks used:  0
+Budget remaining: 100%
+Errors: 0   Slow (>1000 ms): 0
+Burn rate (60s):  0.0x
+BUDGET OK
+No alert
+(one window; real alerts use two)
+
+$ python3 slo/budget.py 99 28
+99% over 28 days = 403.2 minutes of bad time
+$ python3 slo/budget.py 99.9 28
+99.9% over 28 days = 40.3 minutes of bad time
+$ python3 slo/budget.py 99.99 28
+99.99% over 28 days = 4.0 minutes of bad time

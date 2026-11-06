@@ -1,0 +1,8 @@
+# A small yard: one control plane (the tower) and two worker nodes (hubs with a floor).
+# Each node runs as a Docker container on your laptop.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
